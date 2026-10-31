@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Habit Tracker</title>
+<script>
+  // Apply saved theme before paint (system | light | dark)
+  (function () {
+    var t = "system";
+    try { t = localStorage.getItem("habits-theme") || "system"; } catch (e) {}
+    var dark = t === "dark" || (t === "system" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", dark);
+  })();
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config = { darkMode: 'class' }</script>
+<style>
+  :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); -webkit-text-size-adjust: 100%; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif; }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; touch-action: manipulation; }
+  input, select { font-size: 16px; } /* prevents iOS zoom on focus */
+  :focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+  .blob { position: fixed; z-index: 0; border-radius: 9999px; filter: blur(70px); opacity: .35; pointer-events: none; }
+  .dark .blob { opacity: .2; }
+  main { position: relative; z-index: 1; }
+  .title-grad { background: linear-gradient(90deg, #6366f1, #0ea5e9, #10b981); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card { transition: transform .2s ease, box-shadow .2s ease; }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgba(99,102,241,.35); }
+  @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.18); } 100% { transform: scale(1); } }
+  .pop { animation: pop .35s ease; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  .float { display: inline-block; animation: float 3s ease-in-out infinite; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .pop, .float { animation: none; } .card { transition: none; } }
+  @media (forced-colors: active) { .title-grad { color: CanvasText; background: none; } }
+</style>
+</head>
+<body class="bg-gradient-to-br from-indigo-50 via-slate-50 to-sky-50 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950 text-slate-900 dark:text-slate-100 min-h-screen">
+<div class="blob bg-indigo-400" style="width:260px;height:260px;top:-80px;left:-80px" aria-hidden="true"></div>
+<div class="blob bg-sky-400" style="width:300px;height:300px;bottom:-100px;right:-100px" aria-hidden="true"></div>
+
+<nav class="sticky z-20 backdrop-blur bg-white/70 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-700" style="top:env(safe-area-inset-top,0px)" aria-label="Main">
+  <div class="max-w-xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="font-extrabold text-lg"><span class="title-grad">Habits</span> <span class="float" aria-hidden="true">✨</span></div>
+    <div class="flex items-center gap-2">
+      <div id="tabs" role="group" aria-label="History range" class="flex rounded-lg bg-slate-200/70 dark:bg-slate-800 p-1 text-sm"></div>
+      <button id="premium" type="button" class="rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-semibold text-sm px-3 h-9 whitespace-nowrap"></button>
+      <button id="theme" type="button" class="rounded-lg border border-slate-300 dark:border-slate-600 w-9 h-9 flex items-center justify-center"></button>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-xl mx-auto p-4">
+  <p id="today" class="inline-block text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/40 rounded-full px-3 py-1 mt-2 mb-5"></p>
+
+  <div class="flex flex-wrap gap-2 mb-4">
+    <label for="name" class="sr-only">New habit name</label>
+    <input id="name" type="text" maxlength="80" autocomplete="off" placeholder="New habit, e.g. Read 20 minutes"
+      class="flex-1 min-w-[12rem] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2">
+    <label for="cat" class="sr-only">Category</label>
+    <select id="cat" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2"></select>
+    <button id="add" type="button" class="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-4 py-2 font-medium shadow-sm">Add</button>
+  </div>
+
+  <div id="filters" role="group" aria-label="Filter by category" class="flex flex-wrap gap-2 mb-5"></div>
+
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-4 text-xs text-slate-500 dark:text-slate-400">
+    <span id="limit"></span>
+    <span class="flex gap-2">
+      <button id="export" type="button" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5">⬇ Export</button>
+      <button id="import" type="button" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5">⬆ Import</button>
+      <input id="file" type="file" accept="application/json,.json" class="sr-only" tabindex="-1" aria-label="Import backup file">
+    </span>
+  </div>
+
+  <ul id="list" class="space-y-3"></ul>
+  <div id="empty" class="text-center text-slate-500 dark:text-slate-400 mt-10">
+    <div class="text-5xl mb-2" aria-hidden="true">🌱</div>
+    <p>No habits here yet. Add one above.</p>
+  </div>
+  <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+</main>
+
+<script>
+const KEY = "habits-v1", THEME_KEY = "habits-theme";
+let habits = [];
+let justDone = null;
+let range = "week";   // week | month | year
+let filter = "all";   // all | study | exercise | other
+
+const CATS = {
+  study:    { label: "Studying", icon: "📚", edge: "border-l-violet-500", chip: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  exercise: { label: "Exercise", icon: "🏃", edge: "border-l-orange-500", chip: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
+  other:    { label: "Other",    icon: "✨", edge: "border-l-indigo-500", chip: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" }
+};
+const RANGES = { week: "Week", month: "Month", year: "Year" };
+const catOf = h => (CATS[h.cat] ? h.cat : "other");
+const $ = id => document.getElementById(id);
+const newId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+/* ---------- storage (falls back to memory if blocked) ---------- */
+function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+function load() {
+  let raw = [];
+  try { raw = JSON.parse(get(KEY)) || []; } catch (e) {}
+  if (!Array.isArray(raw)) raw = [];
+  // validate / migrate older data (adds ids, drops bad entries)
+  habits = raw.filter(h => h && typeof h.name === "string").map(h => ({
+    id: h.id || newId(),
+    name: h.name.slice(0, 80),
+    cat: h.cat,
+    days: Array.isArray(h.days) ? [...new Set(h.days.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))] : []
+  }));
+}
+function save() { set(KEY, JSON.stringify(habits)); }
+
+/* ---------- dates (local time, no UTC drift) ---------- */
+const pad = n => String(n).padStart(2, "0");
+function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function daysAgo(n) { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return iso(d); }
+function fromIso(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d, 12); }
+function streak(h) {
+  let n = 0, i = h.days.includes(daysAgo(0)) ? 0 : 1;
+  while (h.days.includes(daysAgo(i))) { n++; i++; }
+  return n;
+}
+const fmt = (d, o) => d.toLocaleDateString(undefined, o);
+
+/* ---------- theme ---------- */
+const THEMES = { system: "🖥️", light: "☀️", dark: "🌙" };
+function themeNow() { const t = get(THEME_KEY); return THEMES[t] ? t : "system"; }
+function applyTheme() {
+  const t = themeNow();
+  const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
+  $("theme").textContent = THEMES[t];
+  $("theme").setAttribute("aria-label", `Theme: ${t}. Activate to change.`);
+  $("theme").title = `Theme: ${t}`;
+}
+$("theme").onclick = () => {
+  const order = Object.keys(THEMES);
+  set(THEME_KEY, order[(order.indexOf(themeNow()) + 1) % order.length]);
+  applyTheme();
+};
+if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
+
+/* ---------- navbar + filters ---------- */
+function renderChrome() {
+  updateMeta();
+  const tabs = $("tabs");
+  tabs.innerHTML = "";
+  Object.keys(RANGES).forEach(r => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = RANGES[r];
+    b.setAttribute("aria-pressed", range === r);
+    b.className = "px-3 py-1 rounded-md font-medium " + (range === r ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 dark:text-slate-300");
+    b.onclick = () => { range = r; renderChrome(); render(); };
+    tabs.appendChild(b);
+  });
+
+  const f = $("filters");
+  f.innerHTML = "";
+  [["all", "All", "🗂️"], ...Object.entries(CATS).map(([k, c]) => [k, c.label, c.icon])].forEach(([k, label, icon]) => {
+    const n = k === "all" ? habits.length : habits.filter(h => catOf(h) === k).length;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `${icon} ${label} · ${n}`;
+    b.setAttribute("aria-pressed", filter === k);
+    b.className = "rounded-full px-3 py-1 text-sm border " + (filter === k
+      ? "bg-indigo-600 border-indigo-600 text-white"
+      : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600");
+    b.onclick = () => { filter = k; renderChrome(); render(); };
+    f.appendChild(b);
+  });
+}
+
+/* ---------- history view for one habit ---------- */
+function history(h) {
+  if (range === "week") {
+    let html = "", count = 0;
+    for (let i = 6; i >= 0; i--) {
+      const d = daysAgo(i), on = h.days.includes(d);
+      if (on) count++;
+      const label = fmt(fromIso(d), { weekday: "narrow" });
+      const full = fmt(fromIso(d), { weekday: "long", month: "short", day: "numeric" });
+      html += `<div class="flex flex-col items-center gap-1" title="${full}">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs text-white ${on ? "bg-indigo-600" : "bg-slate-200 dark:bg-slate-700"}" role="img" aria-label="${full}: ${on ? "done" : "not done"}">${on ? "✓" : ""}</div>
+        <span class="text-xs text-slate-500 dark:text-slate-400" aria-hidden="true">${label}</span></div>`;
+    }
+    return { html: `<div class="flex justify-between">${html}</div>`, text: `${count}/7 days this week` };
+  }
+  if (range === "month") {
+    let html = "", count = 0;
+    for (let i = 29; i >= 0; i--) {
+      const d = daysAgo(i), on = h.days.includes(d);
+      if (on) count++;
+      const full = fmt(fromIso(d), { month: "short", day: "numeric" });
+      html += `<div title="${full}" role="img" aria-label="${full}: ${on ? "done" : "not done"}" class="w-5 h-5 rounded-md ${on ? "bg-indigo-600" : "bg-slate-200 dark:bg-slate-700"}"></div>`;
+    }
+    return { html: `<div class="flex flex-wrap gap-1.5">${html}</div>`, text: `${count}/30 days in the last month` };
+  }
+  // year: last 12 months
+  let html = "", total = 0;
+  for (let m = 11; m >= 0; m--) {
+    const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(1); d.setMonth(d.getMonth() - m);
+    const key = iso(d).slice(0, 7);
+    const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const c = h.days.filter(x => x.startsWith(key)).length;
+    total += c;
+    const label = fmt(d, { month: "narrow" });
+    const full = fmt(d, { month: "long", year: "numeric" });
+    html += `<div class="flex flex-col items-center justify-end gap-1 h-full w-5" title="${full}: ${c} days" role="img" aria-label="${full}: ${c} days">
+      <div class="w-full rounded-md bg-indigo-600 ${c ? "" : "opacity-20"}" style="height:${Math.max(4, c / dim * 100) * 0.7}%"></div>
+      <span class="text-xs text-slate-500 dark:text-slate-400" aria-hidden="true">${label}</span></div>`;
+  }
+  return { html: `<div class="flex justify-between items-end h-20">${html}</div>`, text: `${total} days in the last year` };
+}
+
+function render() {
+  const list = $("list");
+  list.innerHTML = "";
+  const today = daysAgo(0);
+  let shown = 0;
+
+  habits.forEach(h => {
+    if (filter !== "all" && catOf(h) !== filter) return;
+    shown++;
+    const c = CATS[catOf(h)];
+    const done = h.days.includes(today);
+    const hist = history(h);
+    const s = streak(h);
+    const li = document.createElement("li");
+    li.className = "card rounded-xl bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 border-l-4 " + (done ? "border-l-emerald-500" : c.edge) + " p-4";
+
+    li.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold break-words"></div>
+          <div class="flex flex-wrap items-center gap-2 mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            <span class="rounded-full px-2 py-0.5 text-xs ${c.chip}">${c.icon} ${c.label}</span>
+            <span>${s >= 3 ? "🔥" : "🌟"} ${s} day streak</span>
+          </div>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" data-act="done" aria-pressed="${done}" class="rounded-lg px-3 py-2 text-sm font-medium ${justDone === h.id ? "pop" : ""} ${done ? "bg-emerald-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}">${done ? "Done ✓" : "Mark done"}</button>
+          <button type="button" data-act="del" class="rounded-lg px-3 py-2 text-sm border border-slate-300 dark:border-slate-600"><span aria-hidden="true">✕</span></button>
+        </div>
+      </div>
+      <div class="mt-4 overflow-x-auto">${hist.html}</div>
+      <div class="mt-3 text-xs text-slate-500 dark:text-slate-400">${hist.text}</div>`;
+
+    li.querySelector(".font-semibold").textContent = h.name;
+    li.querySelector('[data-act="done"]').setAttribute("aria-label", `${h.name}: ${done ? "done today, activate to undo" : "mark done today"}`);
+    li.querySelector('[data-act="del"]').setAttribute("aria-label", `Delete ${h.name}`);
+    li.querySelector('[data-act="done"]').onclick = () => {
+      const i = h.days.indexOf(today);
+      if (i >= 0) { h.days.splice(i, 1); justDone = null; } else { h.days.push(today); justDone = h.id; }
+      save(); render(); justDone = null;
+      $("live").textContent = `${h.name} ${h.days.includes(today) ? "marked done" : "unmarked"}`;
+    };
+    li.querySelector('[data-act="del"]').onclick = () => {
+      if (!confirm(`Delete "${h.name}"?`)) return;
+      habits = habits.filter(x => x.id !== h.id);
+      save(); renderChrome(); render();
+      $("live").textContent = `${h.name} deleted`;
+    };
+    list.appendChild(li);
+  });
+  $("empty").style.display = shown ? "none" : "block";
+}
+
+/* ---------- free limit + Premium (demo toggle, no real payment) ---------- */
+const FREE_LIMIT = 5, PREMIUM_KEY = "habits-premium";
+const isPremium = () => get(PREMIUM_KEY) === "1";
+function updateMeta() {
+  $("premium").textContent = isPremium() ? "⭐ Premium" : "⭐ Premium $5.00";
+  $("premium").setAttribute("aria-pressed", isPremium());
+  $("limit").textContent = isPremium() ? "Unlimited habits" : `${habits.length}/${FREE_LIMIT} free habits`;
+}
+$("premium").onclick = () => {
+  if (isPremium()) { if (confirm("Switch Premium off?")) set(PREMIUM_KEY, "0"); }
+  else if (confirm("Premium: unlimited habits for $5.00.\n\n(Demo only: no payment is taken.) Unlock?")) set(PREMIUM_KEY, "1");
+  updateMeta();
+};
+
+/* ---------- backup ---------- */
+$("export").onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: "habit-tracker", habits }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `habits-${daysAgo(0)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("import").onclick = () => $("file").click();
+$("file").onchange = e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const data = JSON.parse(r.result);
+      const incoming = Array.isArray(data) ? data : data.habits;
+      if (!Array.isArray(incoming)) throw 0;
+      if (!confirm(`Replace your ${habits.length} habits with ${incoming.length} from this file?`)) return;
+      set(KEY, JSON.stringify(incoming)); load(); save(); renderChrome(); render();
+      $("live").textContent = "Backup imported";
+    } catch (err) { alert("That file isn't a valid habit backup."); }
+  };
+  r.readAsText(f);
+};
+
+function addHabit() {
+  const input = $("name");
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  if (!isPremium() && habits.length >= FREE_LIMIT) {
+    alert(`Free plan is limited to ${FREE_LIMIT} habits. Tap "Premium $5.00" in the top bar for unlimited habits.`);
+    return;
+  }
+  habits.push({ id: newId(), name, cat: $("cat").value, days: [] });
+  input.value = "";
+  save(); renderChrome(); render();
+  $("live").textContent = `${name} added`;
+  input.focus();
+}
+
+function refreshToday() {
+  $("today").textContent = fmt(new Date(), { weekday: "long", month: "long", day: "numeric" });
+}
+
+const sel = $("cat");
+Object.entries(CATS).forEach(([k, c]) => sel.add(new Option(`${c.icon} ${c.label}`, k)));
+$("add").onclick = addHabit;
+$("name").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) addHabit(); });
+
+// keep in sync: other tabs, and when the device wakes past midnight
+window.addEventListener("storage", e => { if (e.key === KEY) { load(); renderChrome(); render(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshToday(); render(); } });
+
+applyTheme(); refreshToday(); load(); renderChrome(); render();
+</script>
+</body>
+</html>
